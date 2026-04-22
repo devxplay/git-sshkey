@@ -18,28 +18,37 @@ It solves two common problems:
 
 ## Installation
 
-Build from source:
+Install from local source (recommended):
+
+```bash
+cargo install --path .
+```
+
+This installs `git-sshkey` into Cargo's bin directory (usually `~/.cargo/bin`), which should be on your `PATH`.
+
+If you prefer manual build/copy:
 
 ```bash
 cargo build --release
-```
-
-Binary path:
-
-```bash
-./target/release/git-sshkey
-```
-
-To use as `git sshkey`, place the binary on your `PATH` as `git-sshkey`:
-
-```bash
 cp ./target/release/git-sshkey /usr/local/bin/git-sshkey
 ```
 
-Then Git will resolve:
+Then Git resolves:
 
 ```bash
 git sshkey <subcommand>
+```
+
+Update to latest local changes:
+
+```bash
+cargo install --path . --force
+```
+
+Uninstall:
+
+```bash
+cargo uninstall git-sshkey
 ```
 
 ## Commands
