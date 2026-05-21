@@ -54,9 +54,11 @@ cargo uninstall git-sshkey
 ## Commands
 
 - `git sshkey` - show help
-- `git sshkey status` - show inherited SSH binary and local override
+- `git sshkey info` - show inherited SSH binary and local override
 - `git sshkey list` - list identities currently in `ssh-agent`
 - `git sshkey pick` - interactively select an identity and bind it locally
+- `git sshkey <git-command> ...` - run a Git command using a selected `ssh-agent` identity
+- `git sshkey run <git-command> ...` - run a Git command whose name collides with a `git-sshkey` command
 - `git sshkey test` - run silent auth probe via `git ls-remote --exit-code origin HEAD`
 - `git sshkey clear` - remove local `core.sshCommand` override
 
@@ -72,6 +74,32 @@ cargo uninstall git-sshkey
    - `"{inherited_ssh_binary}" -i "{pub_path}" -o IdentitiesOnly=yes`
 5. Writes repository-local config:
    - `git config --local core.sshCommand "{merged_command}"`
+
+## How Command Passthrough Works
+
+`pick` needs an existing Git repository because it writes local repository config.
+For a new private repository or one-off remote operation, pass the Git command
+through `git sshkey`:
+
+```bash
+git sshkey clone git@github.com:devxplay/DEVxPlay.git
+git sshkey fetch origin
+git sshkey push origin main
+git sshkey status
+```
+
+This reads identities from `ssh-add -L`, lets you choose one, then runs:
+
+```bash
+git -c core.sshCommand="{merged_command}" <git-command> ...
+```
+
+Git applies that SSH command only for that command invocation. Internal
+`git-sshkey` command names are reserved, so use `run` for collisions:
+
+```bash
+git sshkey run config --list
+```
 
 ## Requirements
 

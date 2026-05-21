@@ -9,9 +9,11 @@
 | Command             | Action              | Logic / ROI                                                   |
 | :------------------ | :------------------ | :------------------------------------------------------------ |
 | `git sshkey`        | Usage Help          | Displays help and available subcommands.                      |
-| `git sshkey status` | Environment Audit   | Shows current local override and inherited binary path.       |
+| `git sshkey info`   | Environment Audit   | Shows current local override and inherited binary path.       |
 | `git sshkey pick`   | Interactive Binding | Polls agent, presents UI, and writes local `core.sshCommand`. |
 | `git sshkey list`   | Identity Inventory  | Lists all keys in the agent with index numbers.               |
+| `git sshkey <git-command>` | Command Passthrough | Polls agent, presents UI, and runs Git with `-c core.sshCommand`. |
+| `git sshkey run`    | Collision Escape    | Runs Git command names reserved by `git-sshkey`.              |
 | `git sshkey test`   | Silent Probe        | Runs `git ls-remote --exit-code origin HEAD` to verify auth.  |
 | `git sshkey clear`  | Revert              | Deletes local override and returns to global defaults.        |
 
@@ -33,6 +35,10 @@ The core technical moat is preserving the global SSH binary path while injecting
     - Construct the merged command:
       `"{global_binary}" -i {pub_path} -o IdentitiesOnly=yes`
     - Execute `git config --local core.sshCommand "{merged_command}"`.
+4.  **Command Passthrough:**
+    - Use the same identity-selection and command-construction logic.
+    - Execute `git -c core.sshCommand="{merged_command}" <git-command> ...` so the selected identity applies to one Git invocation.
+    - Reserve internal `git-sshkey` command names; use `git sshkey run <git-command> ...` when a Git command collides.
 
 ## 4. Technical Stack
 

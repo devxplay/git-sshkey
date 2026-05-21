@@ -27,16 +27,25 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Show local override and inherited SSH binary
-    Status,
+    /// Show git-sshkey config and inherited SSH binary
+    Info,
     /// List identities from ssh-agent
     List,
     /// Pick an identity and bind it to this repo
     Pick,
+    /// Run a Git command with a selected ssh-agent identity
+    Run {
+        /// Git arguments to run
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
     /// Verify origin auth without output noise
     Test,
     /// Remove local core.sshCommand override
     Clear,
+    /// Run an unknown Git command with a selected ssh-agent identity
+    #[command(external_subcommand)]
+    Git(Vec<String>),
 }
 
 fn main() {
@@ -47,15 +56,25 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    ensure_git_repo()?;
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Commands::Status) => cmd_status(),
+        Some(Commands::Info) => cmd_info(),
         Some(Commands::List) => cmd_list(),
-        Some(Commands::Pick) => cmd_pick(),
-        Some(Commands::Test) => cmd_test(),
-        Some(Commands::Clear) => cmd_clear(),
+        Some(Commands::Pick) => {
+            ensure_git_repo()?;
+            cmd_pick()
+        }
+        Some(Commands::Run { args }) => cmd_git(args),
+        Some(Commands::Test) => {
+            ensure_git_repo()?;
+            cmd_test()
+        }
+        Some(Commands::Clear) => {
+            ensure_git_repo()?;
+            cmd_clear()
+        }
+        Some(Commands::Git(args)) => cmd_git(args),
         None => {
             // Default `git sshkey` behavior is usage help.
             let mut cmd = Cli::command();
@@ -66,8 +85,12 @@ fn run() -> Result<()> {
     }
 }
 
-fn cmd_status() -> Result<()> {
-    let local = get_local_ssh_command()?;
+fn cmd_info() -> Result<()> {
+    let local = if is_git_repo()? {
+        get_local_ssh_command()?
+    } else {
+        None
+    };
     let inherited = inherited_ssh_binary()?;
 
     println!("inherited ssh binary: {inherited}");
@@ -97,6 +120,36 @@ fn cmd_list() -> Result<()> {
 }
 
 fn cmd_pick() -> Result<()> {
+    let selected = select_agent_key()?;
+    let merged = ssh_command_for_key(selected.line.as_str(), &selected.comment)?;
+
+    set_local_ssh_command(&merged)?;
+    println!("Applied local core.sshCommand:");
+    println!("{merged}");
+    Ok(())
+}
+
+fn cmd_git(args: Vec<String>) -> Result<()> {
+    if args.is_empty() {
+        bail!("no git command provided");
+    }
+
+    let selected = select_agent_key()?;
+    let merged = ssh_command_for_key(selected.line.as_str(), &selected.comment)?;
+
+    let mut command = Command::new("git");
+    command.arg("-c").arg(format!("core.sshCommand={merged}"));
+    command.args(args);
+
+    let status = command.status().context("failed to execute git")?;
+    if status.success() {
+        return Ok(());
+    }
+
+    bail!("git command failed (exit status: {status})");
+}
+
+fn select_agent_key() -> Result<agent::AgentKey> {
     let keys = list_agent_keys()?;
     if keys.is_empty() {
         bail!("no identities found in ssh-agent (try `ssh-add` first)");
@@ -120,19 +173,17 @@ fn cmd_pick() -> Result<()> {
         .interact()
         .context("failed to read selection")?;
 
-    let selected = &keys[idx];
-    let pub_path = persist_public_key(selected.line.as_str(), &selected.comment)?;
+    Ok(keys[idx].clone())
+}
+
+fn ssh_command_for_key(public_key_line: &str, key_comment: &str) -> Result<String> {
+    let pub_path = persist_public_key(public_key_line, key_comment)?;
     let binary = inherited_ssh_binary()?;
-    let merged = format!(
+    Ok(format!(
         "\"{}\" -i \"{}\" -o IdentitiesOnly=yes",
         binary,
         pub_path.display()
-    );
-
-    set_local_ssh_command(&merged)?;
-    println!("Applied local core.sshCommand:");
-    println!("{merged}");
-    Ok(())
+    ))
 }
 
 fn cmd_test() -> Result<()> {
@@ -158,6 +209,14 @@ fn cmd_clear() -> Result<()> {
 }
 
 fn ensure_git_repo() -> Result<()> {
+    if is_git_repo()? {
+        Ok(())
+    } else {
+        bail!("current directory is not a git working tree")
+    }
+}
+
+fn is_git_repo() -> Result<bool> {
     let status = Command::new("git")
         .args(["rev-parse", "--is-inside-work-tree"])
         .stdout(Stdio::null())
@@ -165,11 +224,7 @@ fn ensure_git_repo() -> Result<()> {
         .status()
         .context("failed to run git rev-parse")?;
 
-    if status.success() {
-        Ok(())
-    } else {
-        bail!("current directory is not a git working tree")
-    }
+    Ok(status.success())
 }
 
 fn persist_public_key(public_key_line: &str, key_comment: &str) -> Result<PathBuf> {

@@ -1,4 +1,5 @@
 use anyhow::{Context, Result, bail};
+use std::path::PathBuf;
 use std::process::Command;
 
 #[derive(Debug, Clone)]
@@ -9,7 +10,7 @@ pub struct AgentKey {
 }
 
 pub fn list_agent_keys() -> Result<Vec<AgentKey>> {
-    let output = Command::new("ssh-add")
+    let output = Command::new(resolve_ssh_add_binary())
         .arg("-L")
         .output()
         .context("failed to run `ssh-add -L`")?;
@@ -52,4 +53,20 @@ pub fn list_agent_keys() -> Result<Vec<AgentKey>> {
     }
 
     Ok(keys)
+}
+
+fn resolve_ssh_add_binary() -> PathBuf {
+    if cfg!(windows) {
+        for candidate in [
+            "C:/Program Files/OpenSSH/ssh-add.exe",
+            "C:/Windows/System32/OpenSSH/ssh-add.exe",
+        ] {
+            let path = PathBuf::from(candidate);
+            if path.exists() {
+                return path;
+            }
+        }
+    }
+
+    PathBuf::from("ssh-add")
 }
