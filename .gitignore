@@ -1,1 +1,3 @@
 /target
+# Linear CLI configuration
+.linear.toml
